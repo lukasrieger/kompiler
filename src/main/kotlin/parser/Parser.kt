@@ -24,10 +24,9 @@ object MiniJavaParser : Stage<String, Program>() {
         when (val r = MiniJavaGrammar.tryParseToEnd(input)) {
             is Parsed -> {
                 val (success, rest) = r
-                Either.cond(rest.isEmpty(),
-                    ifTrue = { success },
-                    ifFalse = { CompilerError.Severe("Unparsed input left.", "").nel() }
-                )
+                Either.conditionally(rest.isEmpty(),
+                    ifFalse = { CompilerError.Severe("Unparsed input left.", "").nel() },
+                    ifTrue = { success })
             }
             is ErrorResult -> {
                 CompilerError.Severe("Unparseable input: $r", "").nel().left()
@@ -92,28 +91,28 @@ object MiniJavaGrammar : Grammar<Program>() {
     private val ReturnToken by token("return")
 
 
-    private val IdentifierP by token("\\w+") use { Expression.Id(None, text) }
+    private val IdentifierP by token("\\w+") use { Expression.Id(id =  text) }
 
     private val TrueExprP by token("true") asJust Expression.True
     private val FalseExprP by token("false") asJust Expression.False
-    private val ThisExprP by token("this") asJust Expression.This(None)
+    private val ThisExprP by token("this") asJust Expression.This()
     private val NotExprP: Parser<Expression.Negate> by skip(token("!")) *
             parser { ExprP } map {
-        Expression.Negate(None, it)
+        Expression.Negate(it)
     }
     private val IntExprP by token("[0-9]+") use {
-        Expression.Constant(IntType.some(), text.toInt())
+        Expression.Constant(IntType, text.toInt())
     }
     private val LengthExprP: Parser<Expression.ArrayLength> by parser { ExprP } *
             skip(token("\\.")) *
             skip(token("length")) map {
-        Expression.ArrayLength(IntType.some(), it)
+        Expression.ArrayLength(it)
     }
 
     private val BinOpExprP: Parser<Expression.BinaryOp> by parser { ExprP } *
             BinOpTokens *
             parser { ExprP } map { (left, op, right) ->
-        Expression.BinaryOp(None, left, op, right)
+        Expression.BinaryOp(left = left, op = op, right = right)
     }
 
     private val IdExprP = IdentifierP
@@ -121,16 +120,16 @@ object MiniJavaGrammar : Grammar<Program>() {
             skip(token("int")) *
             skip(LBrackToken) *
             parser { ExprP } *
-            skip(RBrackToken) map { Expression.NewArray(None, it) }
+            skip(RBrackToken) map { Expression.NewArray(size = it) }
 
     private val NewExprP by skip(token("new")) *
             IdentifierP *
-            skip(LParenToken) * skip(RParenToken) map { Expression.New(None, it) }
+            skip(LParenToken) * skip(RParenToken) map { Expression.New(className =  it) }
 
     private val ArrayGetExprP: Parser<Expression.ArrayGet> by parser { ExprP } *
             skip(LBrackToken) *
             parser { ExprP } *
-            skip(RBrackToken) map { (arr, index) -> Expression.ArrayGet(None, arr, index) }
+            skip(RBrackToken) map { (arr, index) -> Expression.ArrayGet(array = arr,index =  index) }
 
     private val MethodCallExprP: Parser<Expression.Invoke> by parser { ExprP } *
             skip(token("\\.")) *
@@ -139,7 +138,7 @@ object MiniJavaGrammar : Grammar<Program>() {
             optional(parser { ExprP } * zeroOrMore(skip(CommaToken) * parser { ExprP })) *
             skip(RParenToken) map { (obj, methodName, args) ->
         val allArgs = args?.let { (firstArg, tail) -> listOf(firstArg) + tail }
-        Expression.Invoke(None, obj, methodName, allArgs)
+        Expression.Invoke(obj = obj, method = methodName, arguments = allArgs)
     }
 
     private val ExprP: Parser<Expression> by TrueExprP or

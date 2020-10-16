@@ -14,12 +14,15 @@ object StandardConfiguration : CompilerConfiguration {
 
 typealias EitherNel<L, R> = Either<Nel<L>, R>
 
-abstract class Stage<I, O> {
-    abstract operator fun invoke(input: I, config: CompilerConfiguration = StandardConfiguration): EitherNel<CompilerError, O>
+interface Stage<I, O> {
+    operator fun invoke(input: I, config: CompilerConfiguration = StandardConfiguration): Either<CompilerError, O> =
+        run(input, config)
+
+    fun run(input: I, config: CompilerConfiguration = StandardConfiguration): Either<CompilerError, O>
 }
 
-infix fun <N, I, O> Stage<I, O>.compose(next: Stage<O, N>) = object : Stage<I, N>() {
-    override operator fun invoke(input: I, config: CompilerConfiguration) =
+infix fun <N, I, O> Stage<I, O>.compose(next: Stage<O, N>) = object : Stage<I, N> {
+    override fun run(input: I, config: CompilerConfiguration) =
         this@compose(input, config).flatMap { next(it, config) }
 
 }
