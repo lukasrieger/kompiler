@@ -23,10 +23,23 @@ fun UntypedExpr.Identifier.toTyped(type: Type? = null) =
     )
 
 sealed class TypeError : CompilerError.Severe("", "") {
-    data class TypeMismatch(val expected: Type, val actual: Type, val expr: Any) : TypeError()
-    data class BinaryMismatch(val left: Type, val right: Type, val expr: TypedExpr) : TypeError()
-    data class IncompatibleArguments(val expected: List<Type>, val actual: List<Type>, val expr: TypedExpr) :
-        TypeError()
+    data class TypeMismatch(
+        val expected: Type,
+        val actual: Type,
+        val expr: Any
+    ) : TypeError()
+
+    data class BinaryMismatch(
+        val left: Type,
+        val right: Type,
+        val expr: TypedExpr
+    ) : TypeError()
+
+    data class IncompatibleArguments(
+        val expected: List<Type>,
+        val actual: List<Type>,
+        val expr: TypedExpr
+    ) : TypeError()
 
     data class UnknownReference(val ref: Name) : TypeError()
 
@@ -78,7 +91,12 @@ data class Context(
 fun Context.scoped(classRef: UntypedClassDefinition): Context = Context(
     types = types,
     outer = this,
-    scope = classRef.fields.definitions.map { it.name to it }.toMap()
+    scope = (classRef.fields.definitions + listOf(
+        TypedExpr.Identifier(
+            name = Name("this", ""),
+            type = Type.ClassType(classRef.name.name)
+        )
+    )).map { it.name to it }.toMap()
 )
 
 fun Context.scoped(methodRef: UntypedMethodDefinition): Context = Context(
@@ -155,7 +173,7 @@ object ToplevelTyper {
             outer = null,
             scope = mapOf()
         )
-    
+
 }
 
 object StatementTyper {
@@ -228,7 +246,9 @@ object ExpressionTyper {
                 !typed(expr.expr).bind().typeOf<Type.BooleanType>()
             )
             is UntypedExpr.New -> TypedExpr.New(
-                !resolve(expr.typeRef).bind().typeOf<Type.ClassType>().map { it as TypedExpr.Identifier }
+                !resolve(expr.typeRef).bind()
+                    .typeOf<Type.ClassType>()
+                    .map { it as TypedExpr.Identifier }
 
             )
             is UntypedExpr.NewArray -> TypedExpr.NewArray(
@@ -249,6 +269,11 @@ object ExpressionTyper {
                 val resolved = !typed(expr.obj).bind().typeOf<Type.ClassType>()
                 val methodRef = !resolveRef(resolved.type as Type.ClassType, expr.method)
                 val arguments = expr.arguments.map { !typed(it) }
+                val typedExpr = TypedExpr.Invoke(
+                    obj = resolved,
+                    method = methodRef,
+                    arguments = arguments
+                )
 
                 val typesCombined = methodRef
                     .argumentTypes.map { it.type }
@@ -262,20 +287,10 @@ object ExpressionTyper {
                         TypeError.IncompatibleArguments(
                             methodRef.argumentTypes.map { it.type },
                             arguments.map { it.type },
-                            TypedExpr.Invoke(
-                                obj = resolved,
-                                method = methodRef,
-                                arguments = arguments
-                            )
+                            typedExpr
                         )
-                    }, ifTrue = {
-                        TypedExpr.Invoke(
-                            obj = resolved,
-                            method = methodRef,
-                            arguments = arguments
-                        )
-                    })
-
+                    }, ifTrue = { typedExpr }
+                )
             }
 
         }
