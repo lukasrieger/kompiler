@@ -7,12 +7,20 @@ import arrow.core.right
 import ast.Name
 import ast.Type
 import ast.typed.*
+import ast.typed.MethodArgs
 import ast.typed.VariableDefinitions
 import ast.untyped.*
 import frontend.CompilerConfiguration
 import frontend.CompilerError
 import frontend.Stage
 import frontend.typecheck.ExpressionTyper.typed
+import frontend.typecheck.StatementTyper.typed
+
+fun UntypedExpr.Identifier.toTyped(type: Type? = null) =
+    TypedExpr.Identifier(
+        name = name,
+        type = type ?: Type.ClassType(name)
+    )
 
 sealed class TypeError : CompilerError.Severe("", "") {
     data class TypeMismatch(val expected: Type, val actual: Type, val expr: Any) : TypeError()
@@ -44,20 +52,14 @@ private inline fun <reified T : Type> TypedExpr.typeOf(alt: Type = Type.UnknownT
             )
         }, ifTrue = { this })
 
-data class TypeRegistry(
-    val classes: Map<TypedExpr.Identifier, TypedClassDefinition>
-) : Map<TypedExpr.Identifier, TypedClassDefinition> by classes {
-    companion object
-}
 
 data class Context(
-    val typeRegistry: TypeRegistry,
+    val types: Map<Name, ClassTypeDescriptor>,
     val outer: Context?,
     val scope: Map<Name, TypedExpr.Identifier>
 ) {
-    companion object {}
 
-    private fun TypedMethodDefinition.toMethodRef(): MethodRef = MethodRef(
+    private fun MethodTypeDescriptor.toMethodRef(): MethodRef = MethodRef(
         name = name,
         returnType = returnType,
         argumentTypes = arguments.args
@@ -67,88 +69,93 @@ data class Context(
         scope[id.name]?.right() ?: outer?.resolve(id) ?: TypeError.UnknownReference(id.name).left()
 
     fun resolveRef(typeRef: Type.ClassType, method: UntypedExpr.Identifier): Either<TypeError, MethodRef> =
-        typeRegistry[TypedExpr.Identifier(typeRef, typeRef.name)]?.let { classDef ->
-            classDef.methods.find { it.name.name == method.name }?.toMethodRef()?.right()
+        types[typeRef.name]?.let { classDef ->
+            classDef.methods[method.name]?.toMethodRef()?.right()
         } ?: TypeError.UnknownReference(typeRef.name).left()
 }
 
 
-fun TypeRegistry.Companion.of(prg: UntypedProgram): Either<TypeError, TypeRegistry> = either.eager {
-    TypeRegistry(
-        classes = !ToplevelTyper.run(prg.classes)
-    )
-}
+fun Context.scoped(classRef: UntypedClassDefinition): Context = Context(
+    types = types,
+    outer = this,
+    scope = classRef.fields.definitions.map { it.name to it }.toMap()
+)
 
-
-
-
-fun Context.scoped(classRef: TypedMethodDefinition): Context = TODO()
+fun Context.scoped(methodRef: UntypedMethodDefinition): Context = Context(
+    types = types,
+    outer = this,
+    scope = (methodRef.variables.definitions + methodRef.arguments.args).map { it.name to it }.toMap()
+)
 
 
 object TypeChecker : Stage<UntypedProgram, TypedProgram> {
 
     override fun run(input: UntypedProgram, config: CompilerConfiguration): Either<TypeError, TypedProgram> =
-        either.eager {
-            val programContext = !TypeRegistry.of(input)
-
-            TypedProgram(programContext[Ident], programContext.classes.values.toList())
-
-
-        }
+        ToplevelTyper.run(input.classes)
 }
-
-typealias PartialTypeRegistry = Map<TypedExpr.Identifier, TypedClassDefinition>
 
 
 object ToplevelTyper {
 
-    /**
-     * TODO:
-     * Implement a Global context that just holds the name mappings of all classes;
-     * Then focus in on each class by Context.of
-     * Then for each class focus in on each method with Context.of
-     */
-
-    fun run(classes: List<UntypedClassDefinition>): Either<TypeError, Map<TypedExpr.Identifier, TypedClassDefinition>> =
+    fun run(classes: List<UntypedClassDefinition>): Either<TypeError, TypedProgram> =
         either.eager {
-            classes.fold(mutableMapOf()) { acc, current ->
-                val typedIdent = TypedExpr.Identifier(
-                    name = current.name.name,
-                    type = Type.ClassType(current.name.name)
+            val globalContext = buildGlobalContext(classes)
+
+            val typedClasses = classes.map { untyped ->
+                val classContext = globalContext.scoped(untyped)
+                val resolvedClass = !globalContext.resolve(untyped.name)
+
+                TypedClassDefinition(
+                    name = resolvedClass,
+                    superName = untyped.superName?.let { !globalContext.resolve(it) },
+                    fields = VariableDefinitions(untyped.fields.definitions),
+                    methods = untyped.methods.map { methodDef ->
+                        val methodContext = classContext.scoped(methodDef)
+
+                        TypedMethodDefinition(
+                            name = methodContext
+                                .resolveRef(resolvedClass.type as Type.ClassType, methodDef.name)
+                                .bind().name,
+                            arguments = MethodArgs(methodDef.arguments.args),
+                            variables = VariableDefinitions(methodDef.variables.definitions),
+                            body = !methodContext.typed(methodDef.body),
+                            returnExpression = !methodContext.typed(methodDef.returnExpression),
+                            returnType = methodDef.returnType
+                        )
+                    }
                 )
-                val fields  = VariableDefinitions(current.fields.definitions)
-                val context = Context(
-                    TypeRegistry(acc),
-
-                )
-                val methods = current.methods.map { acc.runMethodShallow(it) }
-
-                acc[typedIdent] = TypedClassDefinition(
-                    TypedExpr.Identifier(
-                        name = current.name.name,
-                        type = Type.ClassType(current.name.name)
-                    ),
-                    superName = current.superName?.let { (name) ->
-                        val typed = TypedExpr.Identifier(Type.ClassType(name), name)
-                        acc[typed]?.name
-                    },
-                    methods = methods,
-                    fields = fields
-
-                )
-
-                acc
             }
+
+            TypedProgram(classes = typedClasses)
         }
 
-    private fun PartialTypeRegistry.runMethodShallow(method: UntypedMethodDefinition): Either<TypeError,TypedMethodDefinition> {
 
-    }
-
-    private fun PartialTypeRegistry.runFieldShallow(field: UntypedExpr.Identifier): TypedExpr.Identifier {}
-
-
-    fun runMain(mainClass: UntypedClassDefinition): Either<TypeError, TypedClassDefinition> = TODO()
+    /**
+     * TODO: Typechecks!
+     * @param classes List<UntypedClassDefinition>
+     * @return Context
+     */
+    private fun buildGlobalContext(classes: List<UntypedClassDefinition>): Context =
+        Context(
+            types = classes.map { untyped ->
+                untyped.name.name to ClassTypeDescriptor(
+                    name = untyped.name.toTyped(),
+                    superName = untyped.superName?.let { sup ->
+                        TypedExpr.Identifier(name = sup.name, type = Type.ClassType(sup.name))
+                    },
+                    methods = untyped.methods.map { method ->
+                        method.name.name to MethodTypeDescriptor(
+                            name = method.name.toTyped(method.returnType),
+                            arguments = MethodArgs(method.arguments.args),
+                            returnType = method.returnType
+                        )
+                    }.toMap()
+                )
+            }.toMap(),
+            outer = null,
+            scope = mapOf()
+        )
+    
 }
 
 object StatementTyper {

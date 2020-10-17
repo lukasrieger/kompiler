@@ -13,3 +13,10 @@ data class TypedMethodDefinition(
     val returnExpression: TypedExpr,
     val returnType: Type
 )
+
+
+data class MethodTypeDescriptor(
+    val name: TypedExpr.Identifier,
+    val arguments: MethodArgs,
+    val returnType: Type
+)
