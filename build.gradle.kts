@@ -38,7 +38,6 @@ dependencies {
 
     implementation("org.apache.logging.log4j:log4j-core:2.13.3")
 
-    compile("com.github.h0tk3y.betterParse:better-parse-jvm:0.4.0-alpha-3")
 
     implementation("io.arrow-kt:arrow-fx:${Versions.arrowVersion}")
     implementation("io.arrow-kt:arrow-fx-coroutines:${Versions.arrowVersion}")

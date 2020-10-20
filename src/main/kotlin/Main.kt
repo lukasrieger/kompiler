@@ -1,32 +1,20 @@
-import arrow.core.Either
-import parser.MiniJavaParser
+import ast.untyped.UntypedProgram
+import frontend.Stage
+import frontend.compose
+import frontend.ir.IRTranslator
+import frontend.typecheck.TypeChecker
+
+object ParsingStageProxy : Stage<String, UntypedProgram> by TODO()
 
 fun main(): Unit {
-    val parsed = MiniJavaParser("""
-        class ArrayAccess {
-            public static void main(String[] argv) {
-                System.out.println(new AA().run());
-            }
-        }
+    val progress =
+        ParsingStageProxy compose
+                TypeChecker compose
+                IRTranslator
 
-        class AA {
+    val result = progress("")
 
-            public int run() {
-
-                int[] arr;
-
-                arr = new int[2];
-
-                arr[0] = 5;
-                arr[1] = 10;
-                return arr[0];
-            }
-
-        }
-    """.trimIndent())
-
-    when(parsed) {
-        is Either.Right -> println(parsed.b)
-        is Either.Left -> println("An error occured!: $parsed")
-    }
+    println("Done.")
 }
+
+

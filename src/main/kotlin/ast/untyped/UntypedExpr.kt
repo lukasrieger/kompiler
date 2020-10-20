@@ -21,7 +21,7 @@ sealed class UntypedExpr {
     ) : UntypedExpr()
 
     data class ArrayLength(val array: UntypedExpr) : UntypedExpr()
-    data class ArrayGet(val array: UntypedExpr) : UntypedExpr()
+    data class ArrayGet(val array: UntypedExpr, val index: UntypedExpr) : UntypedExpr()
 
     data class Invoke(
         val obj: UntypedExpr,

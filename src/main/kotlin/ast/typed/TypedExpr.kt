@@ -17,12 +17,12 @@ sealed class TypedExpr(open val type: Type) {
     object False : TypedExpr(Type.BooleanType)
     object Read : TypedExpr(Type.IntType)
 
-    class This(typeRef: Identifier) : TypedExpr(typeRef.type)
-    class New(typeRef: Identifier) : TypedExpr(typeRef.type)
+    data class This(val typeRef: Identifier) : TypedExpr(typeRef.type)
+    data class New(val typeRef: Identifier) : TypedExpr(typeRef.type)
 
     data class Constant(val value: Int) : TypedExpr(Type.IntType)
     data class ArrayLength(val array: TypedExpr) : TypedExpr(Type.IntType)
-    data class ArrayGet(val array: TypedExpr) : TypedExpr(Type.IntType)
+    data class ArrayGet(val array: TypedExpr, val index: TypedExpr) : TypedExpr(Type.IntType)
     data class Negate(val expr: TypedExpr) : TypedExpr(Type.BooleanType)
     data class NewArray(val size: TypedExpr) : TypedExpr(Type.ArrayType)
 
