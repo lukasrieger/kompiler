@@ -64,9 +64,7 @@ fun IRFunction.toBlockContainer(): BlockContainer =
         val finalBlock = lastBlock.takeIf { it.isNotEmpty() && !it.endsWithJump() }
             ?.let { PartialBlock(it.label, it + IRStmt.Jump(endLabel)) }
 
-        val blocks = finalBlock?.let {
-            acc + (it.label to it.toBasicBlock())
-        } ?: acc
+        val blocks = finalBlock?.let { acc + (it.label to it.toBasicBlock()) } ?: acc
 
         BlockContainer(
             blocks = blocks,
@@ -107,32 +105,20 @@ tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): 
         val nextState = TraceState(traced = state.traced + current, untraced = state.untraced - current.entry)
         when (val relay = current.relay) {
             is IRStmt.Jump -> {
-                val dst = relay.targets[0]
-
-                when {
-                    state.untraced.contains(dst) -> traceHelper(nextState, state.untraced.getValue(dst))
+                when (val dst = relay.targets[0]) {
+                    in state.untraced -> traceHelper(nextState, state.untraced.getValue(dst))
                     else -> state
                 }
-
             }
             is IRStmt.CJump -> {
-                val falseLabel = relay.falseLabel
-                val trueLabel = relay.trueLabel
+                val (_, _, _, trueLabel, falseLabel) = relay
 
                 when {
-                    state.untraced.contains(falseLabel) -> traceHelper(nextState, state.untraced.getValue(falseLabel))
-                    state.untraced.containsKey(trueLabel) -> {
-                        val negated = IRStmt.CJump(
-                            !relay.rel,
-                            relay.left,
-                            relay.right,
-                            relay.falseLabel,
-                            relay.trueLabel
-                        )
-
+                    falseLabel in state.untraced -> traceHelper(nextState, state.untraced.getValue(falseLabel))
+                    trueLabel in state.untraced -> {
                         val updatedState = nextState.copy(
                             traced = (nextState.traced - current) +
-                                    current.copy(body = current.body.dropLast(1) + negated)
+                                    current.copy(body = current.body.dropLast(1) + !relay)
                         )
 
                         traceHelper(updatedState, state.untraced.getValue(trueLabel))
@@ -140,14 +126,7 @@ tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): 
 
                     else -> {
                         val dummyLabel = Label()
-                        val newJump = IRStmt.CJump(
-                            relay.rel,
-                            relay.left,
-                            relay.right,
-                            relay.trueLabel,
-                            dummyLabel
-                        )
-
+                        val newJump = IRStmt.CJump(relay.rel, relay.left, relay.right, relay.trueLabel, dummyLabel)
                         val updatedState = nextState.copy(
                             traced = (nextState.traced - current) +
                                     current.copy(body = current.body.dropLast(1) + newJump)
@@ -163,10 +142,13 @@ tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): 
                     }
                 }
             }
+            // sealed interfaces would help with this: Annotating Jumps with a special sealed marker interface.
             else -> error("Unreachable.")
         }
     }
 }
+
+private operator fun IRStmt.CJump.not(): IRStmt.CJump = IRStmt.CJump(!rel, left, right, falseLabel, trueLabel)
 
 tailrec fun BlockContainer.traceRec(state: TraceState): List<BasicBlock> = when {
     state.untraced.isEmpty() -> state.traced
