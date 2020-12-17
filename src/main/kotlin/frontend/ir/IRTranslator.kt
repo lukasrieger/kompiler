@@ -4,19 +4,17 @@ import arrow.core.Either
 import arrow.core.computations.either
 import arrow.core.left
 import arrow.core.right
-import ast.Name
+import ast.*
+import ast.ExpF.*
 import ast.Operator.*
-import ast.Type
-import ast.typed.*
-import ast.typed.TypedExpr.*
-import ast.typed.TypedStatement.*
+import ast.StmtF.*
 import frontend.CompilerConfiguration
 import frontend.CompilerError
 import frontend.Stage
 import frontend.StageIdentifier
 import frontend.ir.ast.*
 
-private typealias TypedClasses = List<TypedClassDefinition>
+private typealias TypedClasses = List<ClassDefinition<TStmt, TExp>>
 
 sealed class IRError : CompilerError.Severe("", "") {
     data class MissingIdentifier(val id: String) : IRError()
@@ -70,7 +68,7 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
             )
 
             val localTemps = typedMethod.variables.definitions.map {
-                (scopedContext.environment[it.name.qualifiedName] as IRExp.Temp).temp
+                (scopedContext.environment[it.name.name.qualifiedName] as IRExp.Temp).temp
             }
 
             val translatedBody = scopedContext.translate(typedMethod.body)()
@@ -97,7 +95,7 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
     }
 }
 
-fun IRContext.Companion.global(classes: List<TypedClassDefinition>) = object : IRContext {
+fun IRContext.Companion.global(classes: List<ClassDefinition<TStmt, TExp>>) = object : IRContext {
     override val memoryLookup: Map<String, Int> =
         classes.map { typedClass ->
             typedClass
@@ -125,22 +123,22 @@ interface IRContext {
     val environment: Map<String, IRExp>
 }
 
-fun IRContext.scoped(classDef: TypedClassDefinition, methodDef: TypedMethodDefinition) =
+fun IRContext.scoped(classDef: ClassDefinition<TStmt, TExp>, methodDef: MethodDefinition<TStmt, TExp>) =
     object : IRContext {
         val thisRef = IRExp.Param(0)
         override val memoryLookup: Map<String, Int> = this@scoped.memoryLookup
         override val environment: Map<String, IRExp> = mapOf("this" to thisRef) +
-                methodDef.arguments.args.mapIndexed { index, id -> id.name.qualifiedName to IRExp.Param(index) }
+                methodDef.arguments.args.mapIndexed { index, id -> id.name.name.qualifiedName to IRExp.Param(index) }
                     .toMap() +
                 classDef.fields.definitions.mapIndexed { index, id ->
-                    id.name.qualifiedName to IRExp.Mem(
+                    id.name.name.qualifiedName to IRExp.Mem(
                         IRExp.BinOp(
                             op = IROp.PLUS,
                             left = thisRef,
                             right = IRExp.Const(index + 1)
                         )
                     )
-                } + methodDef.variables.definitions.map { it.name.qualifiedName to IRExp.Temp(TempVar()) }
+                } + methodDef.variables.definitions.map { it.name.name.qualifiedName to IRExp.Temp(TempVar()) }
 
     }
 
@@ -150,11 +148,12 @@ fun IRContext.lookup(id: Name): Either<IRError, IRExp> =
 fun IRContext.sizeOf(className: Name): Either<IRError, Int> =
     memoryLookup[className.qualifiedName]?.right() ?: IRError.MissingClassSize(className.qualifiedName).left()
 
+typealias TypedExpr = TExp
+typealias TypedStatement = TStmt
 
-fun IRContext.translate(exp: TypedExpr): Either<IRError, IRExp> = either.eager {
-    when (exp) {
-        is True -> IRExp.Const(1)
-        is False -> IRExp.Const(0)
+fun IRContext.translate(expr: TypedExpr): Either<IRError, IRExp> = either.eager {
+    when (val exp = expr.exp) {
+
         is Read -> IRExp.Call(IRContext.READ, emptyList())
         is This -> IRExp.Param(0)
         is New -> IRExp.Call(IRContext.ALLOC, listOf(IRExp.Const(sizeOf(exp.typeRef.name)())))
@@ -223,12 +222,12 @@ fun IRContext.translate(exp: TypedExpr): Either<IRError, IRExp> = either.eager {
             func = IRExp.Name(exp.mangledName()),
             args = exp.arguments.map { translate(it)() }
         )
-
+        is Bool -> exp.value.takeIf { it }?.let { IRExp.Const(1) } ?: IRExp.Const(0)
     }
 }
 
-fun IRContext.translate(stmt: TypedStatement): Either<IRError, IRStmt> = either.eager {
-    when (stmt) {
+fun IRContext.translate(statement: TypedStatement): Either<IRError, IRStmt> = either.eager {
+    when (val stmt = statement.stmt) {
         is ArrayAssign -> {
             val array = lookup(stmt.id.name)()
             val index = translate(stmt.index)()
@@ -332,7 +331,7 @@ private fun IRContext.negateExp(exp: IRExp): Either<IRError, IRExp> = either.eag
     }
 }
 
-private fun IRContext.handleBinOpLtCase(exp: BinaryOp): Either<IRError, IRExp> = either.eager {
+private fun IRContext.handleBinOpLtCase(exp: BinaryOp<TExp>): Either<IRError, IRExp> = either.eager {
     val ltRes = TempVar()
     val lblTrue = Label()
     val lblFalse = Label()
@@ -355,7 +354,7 @@ private fun IRContext.handleBinOpLtCase(exp: BinaryOp): Either<IRError, IRExp> =
     )
 }
 
-private fun IRContext.handleBinOpAndCase(exp: BinaryOp): Either<IRError, IRExp> = either.eager {
+private fun IRContext.handleBinOpAndCase(exp: BinaryOp<TExp>): Either<IRError, IRExp> = either.eager {
     val andRes = TempVar()
     val testLbl = Label()
     val lblTrue = Label()
@@ -388,7 +387,7 @@ private fun IRContext.handleBinOpAndCase(exp: BinaryOp): Either<IRError, IRExp> 
 
 }
 
-private fun Invoke.mangledName() =
-    (obj.type as Type.ClassType).let {
-        "${it.name.qualifiedName}\$${method.name.name.qualifiedName}"
+private fun Invoke<TExp>.mangledName() =
+    (obj.type as Typed.Class).let {
+        "${it.name.qualifiedName}\$${method.name.qualifiedName}"
     }

@@ -1,11 +1,48 @@
 package ast
 
-sealed class Type {
-    object BooleanType : Type()
-    object IntType : Type()
-    object VoidType : Type()
-    data class ClassType(val name: Name) : Type()
-    object ArrayType : Type()
+import frontend.CompilerError
 
-    object UnknownType : Type()
+
+sealed class TypeError : CompilerError.Severe("", "") {
+    data class TypeMismatch(
+        val expected: Type,
+        val actual: Type,
+        val expr: Any
+    ) : TypeError()
+
+    data class BinaryMismatch(
+        val left: Type,
+        val right: Type,
+        val expr: ExpF<TExp>
+    ) : TypeError()
+
+    data class IncompatibleArguments(
+        val expected: List<Type>,
+        val actual: List<Type>,
+        val expr: ExpF<TExp>
+    ) : TypeError()
+
+    data class UnknownReference(val ref: Name) : TypeError()
+
 }
+
+interface Type
+
+object TypeState {
+    interface Valid
+    interface Invalid
+}
+
+interface Typed : Type {
+    object Boolean : Typed, TypeState.Valid
+    object Int : Typed, TypeState.Valid
+    object Void : Typed, TypeState.Valid
+    object Array : Typed, TypeState.Valid
+    data class Class(val name: Name) : Typed, TypeState.Valid
+
+    class Error(val err: TypeError) : Typed, TypeState.Invalid
+}
+
+object Untyped : Type
+
+

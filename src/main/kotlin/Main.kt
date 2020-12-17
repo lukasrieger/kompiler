@@ -1,5 +1,5 @@
 import arrow.core.Either
-import ast.untyped.UntypedProgram
+import ast.UntypedProgram
 import canon.IRTracer
 import frontend.*
 import frontend.ir.IRTranslator
@@ -19,13 +19,13 @@ object ParsingStageProxy : Stage<String, UntypedProgram> {
 }
 
 fun main() {
-    val progress = ParsingStageProxy compose
+    val chain = ParsingStageProxy compose
             TypeChecker compose
             IRTranslator compose
             IRTracer
 
     println("Done.")
-    println(progress.identifier)
+    println(chain.identifier)
 }
 
 
