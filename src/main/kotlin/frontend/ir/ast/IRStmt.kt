@@ -1,5 +1,6 @@
 package frontend.ir.ast
 
+
 sealed class IRStmt {
     data class Jump(val dest: IRExp, val targets: List<Label>) : IRStmt() {
         constructor(label: Label) : this(IRExp.Name(label), listOf(label))

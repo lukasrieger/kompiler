@@ -4,19 +4,30 @@ import arrow.core.Either
 import arrow.core.computations.either
 import ast.Type
 import ast.typed.*
+import ast.typed.TypedExpr.*
+import ast.typed.TypedStatement.*
 import ast.untyped.UntypedClassDefinition
 import ast.untyped.UntypedExpr
 import ast.untyped.UntypedProgram
 import ast.untyped.UntypedStatement
 import frontend.CompilerConfiguration
+import frontend.CompilerError
 import frontend.Stage
+import frontend.StageIdentifier
 
 private typealias PartialUntypedPrg = List<UntypedClassDefinition>
 
 object TypeChecker : Stage<UntypedProgram, TypedProgram> {
-    override fun run(input: UntypedProgram, config: CompilerConfiguration): Either<TypeError, TypedProgram> =
+    override fun run(input: UntypedProgram, config: CompilerConfiguration): Either<CompilerError, TypedProgram> =
         input.classes.typed()
+
+    override val identifier: StageIdentifier = StageIdentifier(
+        name = "TypeChecker",
+        canonicalOrder = 2
+    )
+
 }
+
 
 
 fun PartialUntypedPrg.typed(): Either<TypeError, TypedProgram> =
@@ -25,41 +36,39 @@ fun PartialUntypedPrg.typed(): Either<TypeError, TypedProgram> =
 
         val typedClasses = this@typed.map { untyped ->
             val classContext = globalContext.scoped(untyped)
-            val resolvedClass = !globalContext.resolve(untyped.name)
+            val resolvedClass = globalContext.resolve(untyped.name)()
 
-            !typedClassDefinition(resolvedClass, untyped, globalContext, classContext)
+            typedClassDefinition(resolvedClass, untyped, globalContext, classContext)()
         }
 
         TypedProgram(classes = typedClasses)
     }
 
 private fun typedClassDefinition(
-    resolvedClass: TypedExpr.Identifier,
+    resolvedClass: Identifier,
     untyped: UntypedClassDefinition,
     globalContext: Context,
     classContext: Context
 ): Either<TypeError, TypedClassDefinition> = either.eager {
     TypedClassDefinition(
         name = resolvedClass,
-        superName = untyped.superName?.let { !globalContext.resolve(it) },
+        superName = untyped.superName?.let { globalContext.resolve(it)() },
         fields = VariableDefinitions(untyped.fields.definitions),
         methods = untyped.methods.map { methodDef ->
             val methodContext = classContext.scoped(methodDef)
 
             TypedMethodDefinition(
                 name = methodContext
-                    .resolveRef(resolvedClass.type as Type.ClassType, methodDef.name)
-                    .bind().name,
+                    .resolveRef(resolvedClass.type as Type.ClassType, methodDef.name)().name,
                 arguments = MethodArgs(methodDef.arguments.args),
                 variables = VariableDefinitions(methodDef.variables.definitions),
-                body = !methodContext.typed(methodDef.body),
-                returnExpression = !methodContext.typed(methodDef.returnExpression),
+                body = methodContext.typed(methodDef.body)(),
+                returnExpression = methodContext.typed(methodDef.returnExpression)(),
                 returnType = methodDef.returnType
             )
         }
     )
 }
-
 
 
 /**
@@ -71,7 +80,7 @@ private fun PartialUntypedPrg.buildGlobalContext(): Context =
             untyped.name.name to ClassTypeDescriptor(
                 name = untyped.name.toTyped(),
                 superName = untyped.superName?.let { sup ->
-                    TypedExpr.Identifier(name = sup.name, type = Type.ClassType(sup.name))
+                    Identifier(name = sup.name, type = Type.ClassType(sup.name))
                 },
                 methods = untyped.methods.map { method ->
                     method.name.name to MethodTypeDescriptor(
@@ -90,93 +99,93 @@ private fun PartialUntypedPrg.buildGlobalContext(): Context =
 private fun Context.typed(stmt: UntypedStatement): Either<TypeError, TypedStatement> = either.eager {
     when (stmt) {
         is UntypedStatement.ArrayAssign -> {
-            val resolved = !resolve(stmt.id)
-            val index = !typed(stmt.index).bind().typeOf<Type.IntType>()
-            val value = !typed(stmt.value)
-            val typedStmt = TypedStatement.ArrayAssign(resolved, index, value)
+            val resolved = resolve(stmt.id)()
+            val index = typed(stmt.index)().typeOf<Type.IntType>()()
+            val value = typed(stmt.value)()
+            val typedStmt = ArrayAssign(resolved, index, value)
 
-            !Either.conditionally(
+            Either.conditionally(
                 resolved.type == index.type,
                 ifFalse = { TypeError.TypeMismatch(resolved.type, index.type, typedStmt) },
                 ifTrue = { typedStmt }
-            )
+            )()
         }
         is UntypedStatement.Assign -> {
-            val resolved = !resolve(stmt.id)
-            val typedVal = !typed(stmt.value)
-            val typedStmt = TypedStatement.Assign(resolved, typedVal)
+            val resolved = resolve(stmt.id)()
+            val typedVal = typed(stmt.value)()
+            val typedStmt = Assign(resolved, typedVal)
 
-            !Either.conditionally(
+            Either.conditionally(
                 resolved.type == typedVal.type,
                 ifFalse = { TypeError.TypeMismatch(resolved.type, typedVal.type, typedStmt) },
                 ifTrue = { typedStmt }
-            )
+            )()
         }
-        is UntypedStatement.If -> TypedStatement.If(
-            condition = !typed(stmt.condition).bind().typeOf<Type.BooleanType>(),
-            trueBranch = !typed(stmt.trueBranch),
-            falseBranch = !typed(stmt.falseBranch)
+        is UntypedStatement.If -> If(
+            condition = typed(stmt.condition)().typeOf<Type.BooleanType>()(),
+            trueBranch = typed(stmt.trueBranch)(),
+            falseBranch = typed(stmt.falseBranch)()
         )
-        is UntypedStatement.While -> TypedStatement.While(
-            condition = !typed(stmt.condition).bind().typeOf<Type.BooleanType>(),
-            body = !typed(stmt.body)
+        is UntypedStatement.While -> While(
+            condition = typed(stmt.condition)().typeOf<Type.BooleanType>()(),
+            body = typed(stmt.body)()
         )
-        is UntypedStatement.SequenceOf -> TypedStatement.SequenceOf(
-            statements = stmt.statements.map { !typed(it) }
+        is UntypedStatement.SequenceOf -> SequenceOf(
+            statements = stmt.statements.map { typed(it)() }
         )
-        is UntypedStatement.Print -> TypedStatement.Print(output = !typed(stmt.output))
-        is UntypedStatement.Write -> TypedStatement.Write(output = !typed(stmt.output))
+        is UntypedStatement.Print -> Print(output = typed(stmt.output)())
+        is UntypedStatement.Write -> Write(output = typed(stmt.output)())
     }
 }
 
 
 private fun Context.typed(expr: UntypedExpr): Either<TypeError, TypedExpr> = either.eager {
     when (expr) {
-        is UntypedExpr.True -> TypedExpr.True
-        is UntypedExpr.False -> TypedExpr.False
-        is UntypedExpr.Read -> TypedExpr.Read
-        is UntypedExpr.This -> TypedExpr.This(
-            !resolve(
+        is UntypedExpr.True -> True
+        is UntypedExpr.False -> False
+        is UntypedExpr.Read -> Read
+        is UntypedExpr.This -> This(
+            resolve(
                 UntypedExpr.Identifier(Context.THIS)
-            )
+            )()
         )
-        is UntypedExpr.Identifier -> !resolve(expr)
-        is UntypedExpr.Constant -> TypedExpr.Constant(expr.value)
-        is UntypedExpr.ArrayLength -> TypedExpr.ArrayLength(
-            !typed(expr.array).bind().typeOf<Type.ArrayType>()
+        is UntypedExpr.Identifier -> resolve(expr)()
+        is UntypedExpr.Constant -> Constant(expr.value)
+        is UntypedExpr.ArrayLength -> ArrayLength(
+            typed(expr.array)().typeOf<Type.ArrayType>()()
         )
-        is UntypedExpr.ArrayGet -> TypedExpr.ArrayGet(
-            !typed(expr.array).bind().typeOf<Type.ArrayType>(),
-            !typed(expr.index).bind().typeOf<Type.IntType>()
+        is UntypedExpr.ArrayGet -> ArrayGet(
+            typed(expr.array)().typeOf<Type.ArrayType>()(),
+            typed(expr.index)().typeOf<Type.IntType>()()
         )
-        is UntypedExpr.Negate -> TypedExpr.Negate(
-            !typed(expr.expr).bind().typeOf<Type.BooleanType>()
+        is UntypedExpr.Negate -> Negate(
+            typed(expr.expr)().typeOf<Type.BooleanType>()()
         )
-        is UntypedExpr.New -> TypedExpr.New(
-            !resolve(expr.typeRef).bind()
+        is UntypedExpr.New -> New(
+            resolve(expr.typeRef)()
                 .typeOf<Type.ClassType>()
-                .map { it as TypedExpr.Identifier }
+                .map { it as Identifier }()
 
         )
-        is UntypedExpr.NewArray -> TypedExpr.NewArray(
-            !typed(expr.size).bind().typeOf<Type.IntType>()
+        is UntypedExpr.NewArray -> NewArray(
+            typed(expr.size)().typeOf<Type.IntType>()()
         )
-        is UntypedExpr.BinaryOp -> TypedExpr.BinaryOp(
-            left = !typed(expr.left),
+        is UntypedExpr.BinaryOp -> BinaryOp(
+            left = typed(expr.left)(),
             op = expr.op,
-            right = !typed(expr.right)
+            right = typed(expr.right)()
         ).let { e ->
-            !Either.conditionally(
+            Either.conditionally(
                 e.left.type is Type.BooleanType &&
                         e.right.type is Type.BooleanType,
                 ifFalse = { TypeError.BinaryMismatch(e.left.type, e.right.type, e) },
-                ifTrue = { e })
+                ifTrue = { e })()
         }
         is UntypedExpr.Invoke -> {
-            val resolved = !typed(expr.obj).bind().typeOf<Type.ClassType>()
-            val methodRef = !resolveRef(resolved.type as Type.ClassType, expr.method)
-            val arguments = expr.arguments.map { !typed(it) }
-            val typedExpr = TypedExpr.Invoke(
+            val resolved = typed(expr.obj)().typeOf<Type.ClassType>()()
+            val methodRef = resolveRef(resolved.type as Type.ClassType, expr.method)()
+            val arguments = expr.arguments.map { typed(it)() }
+            val typedExpr = Invoke(
                 obj = resolved,
                 method = methodRef,
                 arguments = arguments
@@ -188,7 +197,7 @@ private fun Context.typed(expr: UntypedExpr): Either<TypeError, TypedExpr> = eit
 
             val typesMatch = typesCombined.all { (t1, t2) -> t1 == t2 }
 
-            !Either.conditionally(
+            Either.conditionally(
                 typesCombined.size == methodRef.argumentTypes.size && typesMatch,
                 ifFalse = {
                     TypeError.IncompatibleArguments(
@@ -197,7 +206,7 @@ private fun Context.typed(expr: UntypedExpr): Either<TypeError, TypedExpr> = eit
                         typedExpr
                     )
                 }, ifTrue = { typedExpr }
-            )
+            )()
         }
 
     }

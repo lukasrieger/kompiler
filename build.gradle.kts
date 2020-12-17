@@ -1,15 +1,16 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "1.4.10"
-    kotlin("kapt") version "1.4.10"
-    id("org.jetbrains.dokka") version "1.4.0"
+    kotlin("jvm") version "1.4.20"
+    kotlin("kapt") version "1.4.20"
+    id("org.jetbrains.dokka") version "1.4.20"
+    id("application")
     `maven-publish`
 }
 
 
 object Versions {
-    const val arrowVersion = "0.11.0"
+    const val arrowVersion = "0.12.0-SNAPSHOT"
     const val mockkVersion = "1.10.0"
 }
 
@@ -60,7 +61,6 @@ tasks {
     }
 }
 
-val sourcesJar by tasks.registering(Jar::class) {
-    classifier = "sources"
-    from(sourceSets.main.get().allSource)
+application {
+    mainClass.set("MainKt")
 }

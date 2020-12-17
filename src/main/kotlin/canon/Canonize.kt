@@ -8,13 +8,24 @@ fun IRProgram.canonize() = copy(functions = map { it.canonize() })
 fun IRFunction.canonize(): IRFunction = copy(body = flatMap { it.canonize() })
 
 fun IRStmt.canonize(): List<IRStmt> = when (this) {
-    is IRStmt.Jump -> dest.canonNoTopCall().toStmt { IRStmt.Jump(it, targets) }
+    is IRStmt.Jump -> dest
+        .canonNoTopCall()
+        .toStmt { IRStmt.Jump(it, targets) }
     is IRStmt.IRLabel -> listOf(this)
     is IRStmt.StmSeq -> statements.flatMap { it.canonize() }
-    is IRStmt.CJump -> left.canonNoTopCall().combineToStmt(right.canonNoTopCall()) { l, r ->
-        IRStmt.CJump(rel, l, r, trueLabel, falseLabel)
+    is IRStmt.CJump -> left
+        .canonNoTopCall()
+        .combineToStmt(right.canonNoTopCall()) { l, r ->
+            IRStmt.CJump(rel, l, r, trueLabel, falseLabel)
+        }
+    is IRStmt.Move -> when (dest) {
+        is IRExp.EStmtSeq -> IRStmt.StmSeq(dest.stm, IRStmt.Move(dest.exp, src)).canonize()
+        is IRExp.Mem -> dest.address
+            .canonNoTopCall()
+            .combineToStmt(src.canonNoTopCall()) { eaddr, esrc -> IRStmt.Move(IRExp.Mem(eaddr), esrc) }
+        is IRExp.Temp, is IRExp.Param -> src.canonize().toStmt { IRStmt.Move(dest = dest, src = it) }
+        else -> error("Left-hand side of MOVE must be TEMP, PARAM, MEM or ESEQ.")
     }
-    is IRStmt.Move -> TODO()
 }
 
 fun IRExp.canonize(): CanonizedExp = when (this) {
