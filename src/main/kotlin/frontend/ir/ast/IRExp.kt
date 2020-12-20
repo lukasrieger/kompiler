@@ -20,7 +20,6 @@ sealed class IRExp {
 
     data class Name(val label: Label) : IRExp() {
         constructor(name: String) : this(Label(name))
-
     }
 
     data class Param(val index: Int) : IRExp()

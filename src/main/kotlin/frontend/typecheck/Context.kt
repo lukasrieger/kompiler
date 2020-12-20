@@ -4,59 +4,49 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import ast.*
-
-data class ContextId(val name: Name, val type: Type)
-
-fun ContextId.toTypedRef() = TypedRef(
-    exp = ExpF.Identifier(name),
-    type = type
-)
+import frontend.typecheck.Context.Companion.THIS
 
 
-data class TypedRef(val exp: ExpF.Identifier<TExp>, val type: Type)
+data class SymbolRef<E : ExpK>(val ref: ExpF.Symbol<E>, val type: Type)
 
 data class Context(
-    val types: Map<Name, ClassTypeDescriptor<TExp>>,
+    val types: Map<NamedRef, ClassDescriptor<TExp>>,
     val outer: Context?,
-    val scope: Map<Name, ContextId>
+    val scope: Map<NamedRef, SymbolRef<TExp>>
 ) {
 
     companion object {
-        val THIS = Name("this", "")
+        val THIS = NamedRef("this", "")
     }
 
-    private fun MethodTypeDescriptor.toMethodRef(): MethodRef = MethodRef(
-        name = name,
-        returnType = returnType,
-        argumentTypes = arguments.args.map { it.type }
-    )
+    fun resolve(id: ExpF.Symbol<Exp>): Either<TypeError, SymbolRef<TExp>> =
+        scope[id.name]?.right() ?: outer?.resolve(id) ?: TypeError.UnknownReference(id.name).left()
 
-    fun resolve(id: ExpF.Identifier<Exp>): Either<TypeError, TypedRef> =
-        scope[id.name]?.toTypedRef()?.right() ?: outer?.resolve(id) ?: TypeError.UnknownReference(id.name).left()
-
-    fun resolveRef(typeRef: Typed.Class, method: ExpF.Identifier<Exp>): Either<TypeError, MethodRef> =
+    fun resolveRef(typeRef: Typed.Class, method: ExpF.Symbol<Exp>): Either<TypeError, MethodDescriptor> =
         types[typeRef.name]?.let { classDef ->
-            classDef.methods[method.name]?.toMethodRef()?.right()
+            classDef.methods[method.name]?.right()
         } ?: TypeError.UnknownReference(typeRef.name).left()
 }
 
 
-fun Context.scoped(classRef: ClassDefinition<Stmt, Exp>): Context = Context(
+fun Context.scoped(classRef: ClassDef<Stmt, Exp>): Context = Context(
     types = types,
     outer = this,
-    scope = (classRef.fields.definitions.map { ContextId(it.name.name, it.type) } +
+    scope = (classRef.fields.map { SymbolRef(it.ref.name.toTypedSymbol(), it.type) } +
             listOf(
-                ContextId(
-                    name = Name("this", ""),
+                SymbolRef(
+                    ref = THIS.toTypedSymbol(),
                     type = Typed.Class(classRef.name.name)
                 )
-            )).map { it.name to ContextId(it.name, it.type) }.toMap()
+            )).map { it.ref.name to it }.toMap()
 )
 
-fun Context.scoped(methodRef: MethodDefinition<Stmt, Exp>): Context = Context(
+fun Context.scoped(methodRef: MethodDef<Stmt, Exp>): Context = Context(
     types = types,
     outer = this,
-    scope = (methodRef.variables.definitions + methodRef.arguments.args)
-        .map { it.name.name to ContextId(it.name.name, it.type) }
+    scope = (methodRef.variables + methodRef.arguments)
+        .map { it.ref.name to SymbolRef(it.ref.name.toTypedSymbol(), it.type) }
         .toMap()
 )
+
+fun NamedRef.toTypedSymbol() = ExpF.Symbol<TExp>(this)

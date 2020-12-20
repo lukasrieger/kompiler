@@ -14,7 +14,7 @@ sealed class IRStmt {
         val falseLabel: Label
     ) : IRStmt()
 
-    data class IRLabel(val label: frontend.ir.ast.Label) : IRStmt()
+    data class IRLabel(val label: Label) : IRStmt()
 
     data class Move(val dest: IRExp, val src: IRExp) : IRStmt()
 

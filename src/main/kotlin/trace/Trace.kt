@@ -1,4 +1,4 @@
-package canon
+package trace
 
 
 import arrow.core.Either
@@ -38,9 +38,9 @@ fun IRFunction.trace(): IRFunction = toBlockContainer()
 fun IRFunction.toBlockContainer(): BlockContainer =
     fold(mapOf<Label, BasicBlock>() to initPartial()) { (acc, currentBlock), stmt ->
         when (stmt) {
-            is IRStmt.Jump, is IRStmt.CJump -> {
+            is IRStmt.Jump, is IRStmt.CJump ->
                 acc + (currentBlock.label to currentBlock.toBasicBlock()) to currentBlock
-            }
+
             is IRStmt.IRLabel -> {
                 val withJump = currentBlock.ensureJumpExists(stmt)
 
@@ -61,7 +61,8 @@ fun IRFunction.toBlockContainer(): BlockContainer =
         val startLabel = acc.keys.minOf { it }
         val endLabel = Label()
 
-        val finalBlock = lastBlock.takeIf { it.isNotEmpty() && !it.endsWithJump() }
+        val finalBlock = lastBlock
+            .takeIf { it.isNotEmpty() && !it.endsWithJump() }
             ?.let { PartialBlock(it.label, it + IRStmt.Jump(endLabel)) }
 
         val blocks = finalBlock?.let { acc + (it.label to it.toBasicBlock()) } ?: acc
@@ -143,7 +144,7 @@ tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): 
                 }
             }
             // sealed interfaces would help with this: Annotating Jumps with a special sealed marker interface.
-            else -> error("Unreachable.")
+            else -> error("Unreachable. Not a jump.")
         }
     }
 }

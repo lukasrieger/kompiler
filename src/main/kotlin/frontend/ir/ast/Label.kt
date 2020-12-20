@@ -12,10 +12,8 @@ data class Label private constructor(val id: Int, val name: String) : Comparable
 
         private var currentId = 0
 
-        internal fun id() = currentId++
-        internal fun reset() {
-            currentId = 0
-        }
+        private fun id() = currentId++
+
     }
 
     override fun compareTo(other: Label): Int = id - other.id

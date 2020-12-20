@@ -1,4 +1,4 @@
-package canon
+package trace
 
 import frontend.ir.ast.IRStmt
 import frontend.ir.ast.Label

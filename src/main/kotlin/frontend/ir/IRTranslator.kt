@@ -13,8 +13,10 @@ import frontend.CompilerError
 import frontend.Stage
 import frontend.StageIdentifier
 import frontend.ir.ast.*
+import frontend.ir.ast.IRExp.*
+import frontend.ir.ast.IRStmt.*
 
-private typealias TypedClasses = List<ClassDefinition<TStmt, TExp>>
+private typealias TypedClasses = List<ClassDef<TStmt, TExp>>
 
 sealed class IRError : CompilerError.Severe("", "") {
     data class MissingIdentifier(val id: String) : IRError()
@@ -48,17 +50,17 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
         val runtimeRaise = Label()
         val afterRaise = Label()
 
-        val raiseStmt = IRStmt.StmSeq(
-            IRStmt.Jump(afterRaise),
-            IRStmt.IRLabel(runtimeRaise),
-            IRStmt.Move(
-                IRExp.Temp(TempVar()),
-                IRExp.Call(
-                    IRContext.RAISE, listOf(IRExp.Const(-1))
+        val raiseStmt = StmSeq(
+            Jump(afterRaise),
+            IRLabel(runtimeRaise),
+            Move(
+                Temp(TempVar()),
+                Call(
+                    IRContext.RAISE, listOf(Const(-1))
                 )
             ),
-            IRStmt.Jump(runtimeRaise),
-            IRStmt.IRLabel(afterRaise)
+            Jump(runtimeRaise),
+            IRLabel(afterRaise)
         )
 
         typedClass.methods.map { typedMethod ->
@@ -67,18 +69,18 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
                 methodDef = typedMethod
             )
 
-            val localTemps = typedMethod.variables.definitions.map {
-                (scopedContext.environment[it.name.name.qualifiedName] as IRExp.Temp).temp
+            val localTemps = typedMethod.variables.map {
+                (scopedContext.environment[it.ref.name.qualifiedName] as Temp).temp
             }
 
             val translatedBody = scopedContext.translate(typedMethod.body)()
-            val returnTemp = IRExp.Temp(TempVar())
-            val returnStmt = IRStmt.Move(
+            val returnTemp = Temp(TempVar())
+            val returnStmt = Move(
                 returnTemp,
                 scopedContext.translate(typedMethod.returnExpression)()
             )
 
-            val expandedBody = IRStmt.StmSeq(
+            val expandedBody = StmSeq(
                 translatedBody,
                 raiseStmt,
                 returnStmt
@@ -86,7 +88,7 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
 
             IRFunction(
                 name = Label("${typedClass.name.name.qualifiedName}\$${typedMethod.name.name.simpleName}"),
-                paramCount = typedMethod.arguments.args.size + 1,
+                paramCount = typedMethod.arguments.size + 1,
                 body = listOf(expandedBody),
                 returnVar = returnTemp.temp,
                 locals = localTemps
@@ -95,13 +97,13 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
     }
 }
 
-fun IRContext.Companion.global(classes: List<ClassDefinition<TStmt, TExp>>) = object : IRContext {
+fun IRContext.Companion.global(classes: List<ClassDef<TStmt, TExp>>) = object : IRContext {
     override val memoryLookup: Map<String, Int> =
         classes.map { typedClass ->
             typedClass
                 .name
                 .name
-                .qualifiedName to (typedClass.fields.definitions.size * WORD_SIZE + 4)
+                .qualifiedName to (typedClass.fields.size * WORD_SIZE + 4)
         }.toMap()
 
     override val environment: Map<String, IRExp> = emptyMap()
@@ -123,66 +125,64 @@ interface IRContext {
     val environment: Map<String, IRExp>
 }
 
-fun IRContext.scoped(classDef: ClassDefinition<TStmt, TExp>, methodDef: MethodDefinition<TStmt, TExp>) =
+fun IRContext.scoped(classDef: ClassDef<TStmt, TExp>, methodDef: MethodDef<TStmt, TExp>) =
     object : IRContext {
-        val thisRef = IRExp.Param(0)
+        val thisRef = Param(0)
         override val memoryLookup: Map<String, Int> = this@scoped.memoryLookup
         override val environment: Map<String, IRExp> = mapOf("this" to thisRef) +
-                methodDef.arguments.args.mapIndexed { index, id -> id.name.name.qualifiedName to IRExp.Param(index) }
+                methodDef.arguments.mapIndexed { index, id -> id.ref.name.qualifiedName to Param(index) }
                     .toMap() +
-                classDef.fields.definitions.mapIndexed { index, id ->
-                    id.name.name.qualifiedName to IRExp.Mem(
-                        IRExp.BinOp(
+                classDef.fields.mapIndexed { index, id ->
+                    id.ref.name.qualifiedName to Mem(
+                        BinOp(
                             op = IROp.PLUS,
                             left = thisRef,
-                            right = IRExp.Const(index + 1)
+                            right = Const(index + 1)
                         )
                     )
-                } + methodDef.variables.definitions.map { it.name.name.qualifiedName to IRExp.Temp(TempVar()) }
+                } + methodDef.variables.map { it.ref.name.qualifiedName to Temp(TempVar()) }
 
     }
 
-fun IRContext.lookup(id: Name): Either<IRError, IRExp> =
+fun IRContext.lookup(id: NamedRef): Either<IRError, IRExp> =
     environment[id.qualifiedName]?.right() ?: IRError.MissingIdentifier(id.qualifiedName).left()
 
-fun IRContext.sizeOf(className: Name): Either<IRError, Int> =
+fun IRContext.sizeOf(className: NamedRef): Either<IRError, Int> =
     memoryLookup[className.qualifiedName]?.right() ?: IRError.MissingClassSize(className.qualifiedName).left()
 
-typealias TypedExpr = TExp
-typealias TypedStatement = TStmt
 
-fun IRContext.translate(expr: TypedExpr): Either<IRError, IRExp> = either.eager {
+fun IRContext.translate(expr: TExp): Either<IRError, IRExp> = either.eager {
     when (val exp = expr.exp) {
 
-        is Read -> IRExp.Call(IRContext.READ, emptyList())
-        is This -> IRExp.Param(0)
-        is New -> IRExp.Call(IRContext.ALLOC, listOf(IRExp.Const(sizeOf(exp.typeRef.name)())))
-        is Constant -> IRExp.Const(exp.value)
-        is ArrayLength -> IRExp.Mem(address = translate(exp.array)())
+        is Read -> Call(IRContext.READ, emptyList())
+        is This -> Param(0)
+        is New -> Call(IRContext.ALLOC, listOf(Const(sizeOf(exp.typeRef.name)())))
+        is Constant -> Const(exp.value)
+        is ArrayLength -> Mem(address = translate(exp.array)())
         is ArrayGet -> {
             val array = translate(exp.array)()
             val index = translate(exp.index)()
             val getLbl = Label()
 
-            val checkBounds = IRStmt.CJump(
+            val checkBounds = CJump(
                 rel = Rel.GE,
                 left = index,
-                right = IRExp.Mem(array),
+                right = Mem(array),
                 trueLabel = IRContext.RAISE.label,
                 falseLabel = getLbl
             )
-            IRExp.EStmtSeq(
-                IRStmt.StmSeq(
+            EStmtSeq(
+                StmSeq(
                     checkBounds,
-                    IRStmt.IRLabel(getLbl)
+                    IRLabel(getLbl)
                 ),
-                IRExp.Mem(
-                    IRExp.BinOp(
+                Mem(
+                    BinOp(
                         op = IROp.PLUS,
-                        left = IRExp.BinOp(
+                        left = BinOp(
                             op = IROp.MUL,
-                            left = IRExp.BinOp(index, IROp.PLUS, IRExp.Const(1)),
-                            right = IRExp.Const(IRContext.WORD_SIZE)
+                            left = BinOp(index, IROp.PLUS, Const(1)),
+                            right = Const(IRContext.WORD_SIZE)
                         ),
                         right = array
                     )
@@ -192,25 +192,25 @@ fun IRContext.translate(expr: TypedExpr): Either<IRError, IRExp> = either.eager 
         is Negate -> negateExp(translate(exp.expr)())()
         is NewArray -> {
             val size = translate(exp.size)()
-            val memSize = IRExp.BinOp(
+            val memSize = BinOp(
                 op = IROp.PLUS,
-                left = IRExp.BinOp(size, IROp.MUL, IRExp.Const(IRContext.WORD_SIZE)),
-                right = IRExp.Const(IRContext.WORD_SIZE)
+                left = BinOp(size, IROp.MUL, Const(IRContext.WORD_SIZE)),
+                right = Const(IRContext.WORD_SIZE)
             )
-            val allocExp = IRExp.Call(IRContext.ALLOC, listOf(memSize))
-            val mem = IRExp.Temp(TempVar())
+            val allocExp = Call(IRContext.ALLOC, listOf(memSize))
+            val mem = Temp(TempVar())
 
-            IRExp.EStmtSeq(
-                IRStmt.StmSeq(
-                    IRStmt.Move(mem, allocExp),
-                    IRStmt.Move(IRExp.Mem(mem), size)
+            EStmtSeq(
+                StmSeq(
+                    Move(mem, allocExp),
+                    Move(Mem(mem), size)
                 ),
                 mem
             )
         }
-        is Identifier -> lookup(exp.name)()
+        is Symbol -> lookup(exp.name)()
         is BinaryOp -> when (exp.op) {
-            Plus, Minus, Times, Div, Gt -> IRExp.BinOp(
+            Plus, Minus, Times, Div, Gt -> BinOp(
                 left = translate(exp.left)(),
                 op = exp.op.toIR(),
                 right = translate(exp.right)()
@@ -218,15 +218,15 @@ fun IRContext.translate(expr: TypedExpr): Either<IRError, IRExp> = either.eager 
             And -> handleBinOpAndCase(exp)()
             Lt -> handleBinOpLtCase(exp)()
         }
-        is Invoke -> IRExp.Call(
+        is Invoke -> Call(
             func = IRExp.Name(exp.mangledName()),
             args = exp.arguments.map { translate(it)() }
         )
-        is Bool -> exp.value.takeIf { it }?.let { IRExp.Const(1) } ?: IRExp.Const(0)
+        is Bool -> exp.value.takeIf { it }?.let { Const(1) } ?: Const(0)
     }
 }
 
-fun IRContext.translate(statement: TypedStatement): Either<IRError, IRStmt> = either.eager {
+fun IRContext.translate(statement: TStmt): Either<IRError, IRStmt> = either.eager {
     when (val stmt = statement.stmt) {
         is ArrayAssign -> {
             val array = lookup(stmt.id.name)()
@@ -234,29 +234,29 @@ fun IRContext.translate(statement: TypedStatement): Either<IRError, IRStmt> = ei
             val value = translate(stmt.value)()
             val lblAssign = Label()
 
-            val checkBounds = IRStmt.CJump(
+            val checkBounds = CJump(
                 rel = Rel.GE,
                 index,
-                IRExp.Mem(array),
+                Mem(array),
                 IRContext.RAISE.label,
                 lblAssign
             )
 
-            IRStmt.StmSeq(
+            StmSeq(
                 checkBounds,
-                IRStmt.IRLabel(lblAssign),
-                IRStmt.Move(
-                    IRExp.Mem(
-                        IRExp.BinOp(
+                IRLabel(lblAssign),
+                Move(
+                    Mem(
+                        BinOp(
                             op = IROp.PLUS,
-                            left = IRExp.BinOp(
+                            left = BinOp(
                                 op = IROp.MUL,
-                                left = IRExp.BinOp(
+                                left = BinOp(
                                     op = IROp.PLUS,
                                     left = index,
-                                    right = IRExp.Const(1)
+                                    right = Const(1)
                                 ),
-                                right = IRExp.Const(IRContext.WORD_SIZE)
+                                right = Const(IRContext.WORD_SIZE)
                             ),
                             right = array
                         )
@@ -265,26 +265,26 @@ fun IRContext.translate(statement: TypedStatement): Either<IRError, IRStmt> = ei
                 )
             )
         }
-        is Assign -> IRStmt.Move(lookup(stmt.id.name)(), translate(stmt.value)())
+        is Assign -> Move(lookup(stmt.id.name)(), translate(stmt.value)())
         is If -> {
             val lblTrue = Label()
             val lblFalse = Label()
             val lblAfter = Label()
 
-            IRStmt.StmSeq(
-                IRStmt.CJump(
+            StmSeq(
+                CJump(
                     rel = Rel.EQ,
                     left = translate(stmt.condition)(),
-                    right = IRExp.Const(1),
+                    right = Const(1),
                     trueLabel = lblTrue,
                     falseLabel = lblFalse
                 ),
-                IRStmt.IRLabel(lblTrue),
+                IRLabel(lblTrue),
                 translate(stmt.trueBranch)(),
-                IRStmt.Jump(lblAfter),
-                IRStmt.IRLabel(lblFalse),
+                Jump(lblAfter),
+                IRLabel(lblFalse),
                 translate(stmt.falseBranch)(),
-                IRStmt.IRLabel(lblAfter)
+                IRLabel(lblAfter)
             )
         }
         is While -> {
@@ -292,40 +292,40 @@ fun IRContext.translate(statement: TypedStatement): Either<IRError, IRStmt> = ei
             val lblBody = Label()
             val lblAfter = Label()
 
-            IRStmt.StmSeq(
-                IRStmt.IRLabel(lblBefore),
-                IRStmt.CJump(
+            StmSeq(
+                IRLabel(lblBefore),
+                CJump(
                     rel = Rel.EQ,
                     left = translate(stmt.condition)(),
-                    right = IRExp.Const(1),
+                    right = Const(1),
                     trueLabel = lblBody,
                     falseLabel = lblAfter
                 ),
-                IRStmt.IRLabel(lblBody),
+                IRLabel(lblBody),
                 translate(stmt.body)(),
-                IRStmt.Jump(lblBefore),
-                IRStmt.IRLabel(lblAfter)
+                Jump(lblBefore),
+                IRLabel(lblAfter)
             )
         }
-        is Print -> IRStmt.Move(
-            IRExp.Temp(TempVar()),
-            IRExp.Call(IRContext.PRINT, listOf(translate(stmt.output)()))
+        is Print -> Move(
+            Temp(TempVar()),
+            Call(IRContext.PRINT, listOf(translate(stmt.output)()))
         )
-        is Write -> IRStmt.Move(
-            IRExp.Temp(TempVar()),
-            IRExp.Call(IRContext.WRITE, listOf(translate(stmt.output)()))
+        is Write -> Move(
+            Temp(TempVar()),
+            Call(IRContext.WRITE, listOf(translate(stmt.output)()))
         )
-        is SequenceOf -> IRStmt.StmSeq(stmt.statements.map { translate(it)() })
+        is SequenceOf -> StmSeq(stmt.statements.map { translate(it)() })
     }
 }
 
 
 private fun IRContext.negateExp(exp: IRExp): Either<IRError, IRExp> = either.eager {
     when (exp) {
-        is IRExp.BinOp, is IRExp.Call, is IRExp.Temp, is IRExp.Param, is IRExp.Mem ->
-            IRExp.BinOp(IRExp.Const(1), IROp.MINUS, exp)
-        is IRExp.Const -> IRExp.Const(1 - exp.value)
-        is IRExp.EStmtSeq -> IRExp.EStmtSeq(exp.stm, negateExp(exp.exp)())
+        is BinOp, is Call, is Temp, is Param, is Mem ->
+            BinOp(Const(1), IROp.MINUS, exp)
+        is Const -> Const(1 - exp.value)
+        is EStmtSeq -> EStmtSeq(exp.stm, negateExp(exp.exp)())
         // should already be caught by type checking!
         is IRExp.Name -> IRError.NonNegatableExpression(exp).left().invoke<IRExp>()
     }
@@ -336,21 +336,21 @@ private fun IRContext.handleBinOpLtCase(exp: BinaryOp<TExp>): Either<IRError, IR
     val lblTrue = Label()
     val lblFalse = Label()
 
-    IRExp.EStmtSeq(
-        IRStmt.StmSeq(
-            IRStmt.Move(IRExp.Temp(ltRes), IRExp.Const(0)),
-            IRStmt.CJump(
+    EStmtSeq(
+        StmSeq(
+            Move(Temp(ltRes), Const(0)),
+            CJump(
                 rel = Rel.LT,
                 left = translate(exp.left)(),
                 right = translate(exp.right)(),
                 trueLabel = lblTrue,
                 falseLabel = lblFalse
             ),
-            IRStmt.IRLabel(lblTrue),
-            IRStmt.Move(IRExp.Temp(ltRes), IRExp.Const(1)),
-            IRStmt.IRLabel(lblFalse)
+            IRLabel(lblTrue),
+            Move(Temp(ltRes), Const(1)),
+            IRLabel(lblFalse)
         ),
-        IRExp.Temp(ltRes)
+        Temp(ltRes)
     )
 }
 
@@ -360,29 +360,29 @@ private fun IRContext.handleBinOpAndCase(exp: BinaryOp<TExp>): Either<IRError, I
     val lblTrue = Label()
     val lblFalse = Label()
 
-    IRExp.EStmtSeq(
-        IRStmt.StmSeq(
-            IRStmt.Move(IRExp.Temp(andRes), IRExp.Const(0)),
-            IRStmt.CJump(
+    EStmtSeq(
+        StmSeq(
+            Move(Temp(andRes), Const(0)),
+            CJump(
                 rel = Rel.EQ,
                 left = translate(exp.left)(),
-                right = IRExp.Const(1),
+                right = Const(1),
                 trueLabel = testLbl,
                 falseLabel = lblFalse
             ),
-            IRStmt.IRLabel(testLbl),
-            IRStmt.CJump(
+            IRLabel(testLbl),
+            CJump(
                 rel = Rel.EQ,
                 left = translate(exp.right)(),
-                right = IRExp.Const(1),
+                right = Const(1),
                 trueLabel = lblTrue,
                 falseLabel = lblFalse
             ),
-            IRStmt.IRLabel(lblTrue),
-            IRStmt.Move(IRExp.Temp(andRes), IRExp.Const(1)),
-            IRStmt.IRLabel(lblFalse)
+            IRLabel(lblTrue),
+            Move(Temp(andRes), Const(1)),
+            IRLabel(lblFalse)
         ),
-        IRExp.Temp(andRes)
+        Temp(andRes)
     )
 
 }

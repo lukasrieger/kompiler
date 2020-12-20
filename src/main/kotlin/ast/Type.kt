@@ -22,25 +22,25 @@ sealed class TypeError : CompilerError.Severe("", "") {
         val expr: ExpF<TExp>
     ) : TypeError()
 
-    data class UnknownReference(val ref: Name) : TypeError()
+    data class UnknownReference(val ref: NamedRef) : TypeError()
 
 }
 
 interface Type
 
-object TypeState {
-    interface Valid
-    interface Invalid
+sealed class TypeState {
+    open class Valid : TypeState()
+    open class Invalid : TypeState()
 }
 
 interface Typed : Type {
-    object Boolean : Typed, TypeState.Valid
-    object Int : Typed, TypeState.Valid
-    object Void : Typed, TypeState.Valid
-    object Array : Typed, TypeState.Valid
-    data class Class(val name: Name) : Typed, TypeState.Valid
+    object Boolean : Typed, TypeState.Valid()
+    object Int : Typed, TypeState.Valid()
+    object Void : Typed, TypeState.Valid()
+    object Array : Typed, TypeState.Valid()
 
-    class Error(val err: TypeError) : Typed, TypeState.Invalid
+    data class Class(val name: NamedRef) : Typed, TypeState.Valid()
+    data class Error(val err: TypeError) : Typed, TypeState.Invalid()
 }
 
 object Untyped : Type

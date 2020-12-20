@@ -1,9 +1,10 @@
 import arrow.core.Either
 import ast.UntypedProgram
-import canon.IRTracer
+import canonize.IRCanonize
 import frontend.*
 import frontend.ir.IRTranslator
 import frontend.typecheck.TypeChecker
+import trace.IRTracer
 
 object ParsingStageProxy : Stage<String, UntypedProgram> {
     override val identifier: StageIdentifier
@@ -22,6 +23,7 @@ fun main() {
     val chain = ParsingStageProxy compose
             TypeChecker compose
             IRTranslator compose
+            IRCanonize compose
             IRTracer
 
     println("Done.")

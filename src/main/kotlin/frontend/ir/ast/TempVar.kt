@@ -5,6 +5,5 @@ data class TempVar(val id: Int = id()) {
         private var currentId = 0
 
         fun id() = currentId++
-        fun reset() { currentId = 0 }
     }
 }

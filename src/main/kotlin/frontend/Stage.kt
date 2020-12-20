@@ -1,7 +1,6 @@
 package frontend
 
 import arrow.core.Either
-import arrow.core.Nel
 import arrow.core.flatMap
 import frontend.Stage.Companion.COMPOSED_STAGE
 import kotlin.time.ExperimentalTime
@@ -24,13 +23,9 @@ interface CompilerConfiguration {
 }
 
 object StandardConfiguration : CompilerConfiguration {
-    const val TYPE = "DEBUG"
-
     override val logLevel: LogLevel = LogLevel.Verbose
 }
 
-
-typealias EitherNel<L, R> = Either<Nel<L>, R>
 
 
 interface Stage<I, O> {

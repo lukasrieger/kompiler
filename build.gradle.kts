@@ -51,7 +51,11 @@ val compileKotlin: KotlinCompile by tasks
 
 tasks.withType<KotlinCompile>().configureEach {
     kotlinOptions.jvmTarget = "1.8"
-    kotlinOptions.freeCompilerArgs += listOf("-Xinline-classes","-Xopt-in=kotlin.contracts.ExperimentalContracts")
+    kotlinOptions.freeCompilerArgs += listOf(
+        "-Xinline-classes",
+        "-Xopt-in=kotlin.contracts.ExperimentalContracts",
+        "-Xopt-in=kotlin.RequiresOptIn"
+    )
 }
 
 

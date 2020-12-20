@@ -1,7 +1,27 @@
-package canon
+package canonize
 
+import arrow.core.Either
+import arrow.core.Left
+import arrow.core.Right
+import frontend.CompilerConfiguration
+import frontend.CompilerError
+import frontend.Stage
+import frontend.StageIdentifier
 import frontend.ir.ast.*
 
+data class CanonizeError(val err: Throwable) : CompilerError.Severe("Can't canonize program", "")
+
+object IRCanonize : Stage<IRProgram, IRProgram> {
+    override val identifier: StageIdentifier = StageIdentifier("IRCanonize", 4)
+
+    override fun run(input: IRProgram, config: CompilerConfiguration): Either<CompilerError, IRProgram> =
+        try {
+            Right(input.canonize())
+        } catch (err: Throwable) {
+            Left(CanonizeError(err))
+        }
+
+}
 
 fun IRProgram.canonize() = copy(functions = map { it.canonize() })
 

@@ -1,4 +1,4 @@
-package canon
+package canonize
 
 import frontend.ir.ast.IRExp
 import frontend.ir.ast.IRStmt
