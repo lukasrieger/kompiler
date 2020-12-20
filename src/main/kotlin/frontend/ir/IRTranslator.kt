@@ -12,6 +12,7 @@ import frontend.CompilerConfiguration
 import frontend.CompilerError
 import frontend.Stage
 import frontend.StageIdentifier
+import frontend.ir.IRContext.Companion.THIS
 import frontend.ir.ast.*
 import frontend.ir.ast.IRExp.*
 import frontend.ir.ast.IRStmt.*
@@ -70,7 +71,7 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
             )
 
             val localTemps = typedMethod.variables.map {
-                (scopedContext.environment[it.ref.name.qualifiedName] as Temp).temp
+                (scopedContext.environment[it.ref.name] as Temp).temp
             }
 
             val translatedBody = scopedContext.translate(typedMethod.body)()
@@ -98,57 +99,56 @@ fun TypedClasses.translate(globalContext: IRContext): Either<IRError, List<IRCla
 }
 
 fun IRContext.Companion.global(classes: List<ClassDef<TStmt, TExp>>) = object : IRContext {
-    override val memoryLookup: Map<String, Int> =
-        classes.map { typedClass ->
-            typedClass
-                .name
-                .name
-                .qualifiedName to (typedClass.fields.size * WORD_SIZE + 4)
-        }.toMap()
+    override val memoryLookup = classes.map { typedClass ->
+        typedClass
+            .name
+            .name to (typedClass.fields.size * WORD_SIZE + 4)
+    }.toMap()
 
-    override val environment: Map<String, IRExp> = emptyMap()
+    override val environment: Map<NamedRef, IRExp> = emptyMap()
 }
 
 interface IRContext {
     companion object {
         const val WORD_SIZE = 8
 
-        val RAISE = IRExp.Name(Label("_raise"))
-        val READ  = IRExp.Name(Label("_read"))
-        val ALLOC = IRExp.Name(Label("_halloc"))
-        val PRINT = IRExp.Name(Label("_println_int"))
-        val WRITE = IRExp.Name(Label("_write"))
+        val THIS = NamedRef("this", "")
+        val RAISE = Name(Label("_raise"))
+        val READ = Name(Label("_read"))
+        val ALLOC = Name(Label("_halloc"))
+        val PRINT = Name(Label("_println_int"))
+        val WRITE = Name(Label("_write"))
 
     }
 
-    val memoryLookup: Map<String, Int>
-    val environment: Map<String, IRExp>
+    val memoryLookup: Map<NamedRef, Int>
+    val environment: Map<NamedRef, IRExp>
 }
 
 fun IRContext.scoped(classDef: ClassDef<TStmt, TExp>, methodDef: MethodDef<TStmt, TExp>) =
     object : IRContext {
         val thisRef = Param(0)
-        override val memoryLookup: Map<String, Int> = this@scoped.memoryLookup
-        override val environment: Map<String, IRExp> = mapOf("this" to thisRef) +
-                methodDef.arguments.mapIndexed { index, id -> id.ref.name.qualifiedName to Param(index) }
+        override val memoryLookup = this@scoped.memoryLookup
+        override val environment: Map<NamedRef, IRExp> = mapOf(THIS to thisRef) +
+                methodDef.arguments.mapIndexed { index, id -> id.ref.name to Param(index) }
                     .toMap() +
                 classDef.fields.mapIndexed { index, id ->
-                    id.ref.name.qualifiedName to Mem(
+                    id.ref.name to Mem(
                         BinOp(
                             op = IROp.PLUS,
                             left = thisRef,
                             right = Const(index + 1)
                         )
                     )
-                } + methodDef.variables.map { it.ref.name.qualifiedName to Temp(TempVar()) }
+                } + methodDef.variables.map { it.ref.name to Temp(TempVar()) }
 
     }
 
 fun IRContext.lookup(id: NamedRef): Either<IRError, IRExp> =
-    environment[id.qualifiedName]?.right() ?: IRError.MissingIdentifier(id.qualifiedName).left()
+    environment[id]?.right() ?: IRError.MissingIdentifier(id.qualifiedName).left()
 
 fun IRContext.sizeOf(className: NamedRef): Either<IRError, Int> =
-    memoryLookup[className.qualifiedName]?.right() ?: IRError.MissingClassSize(className.qualifiedName).left()
+    memoryLookup[className]?.right() ?: IRError.MissingClassSize(className.qualifiedName).left()
 
 
 fun IRContext.translate(expr: TExp): Either<IRError, IRExp> = either.eager {
@@ -219,7 +219,7 @@ fun IRContext.translate(expr: TExp): Either<IRError, IRExp> = either.eager {
             Lt -> handleBinOpLtCase(exp)()
         }
         is Invoke -> Call(
-            func = IRExp.Name(exp.mangledName()),
+            func = Name(exp.mangledName()),
             args = exp.arguments.map { translate(it)() }
         )
         is Bool -> exp.value.takeIf { it }?.let { Const(1) } ?: Const(0)
@@ -322,12 +322,10 @@ fun IRContext.translate(statement: TStmt): Either<IRError, IRStmt> = either.eage
 
 private fun IRContext.negateExp(exp: IRExp): Either<IRError, IRExp> = either.eager {
     when (exp) {
-        is BinOp, is Call, is Temp, is Param, is Mem ->
-            BinOp(Const(1), IROp.MINUS, exp)
+        is BinOp, is Call, is Temp, is Param, is Mem -> BinOp(Const(1), IROp.MINUS, exp)
         is Const -> Const(1 - exp.value)
         is EStmtSeq -> EStmtSeq(exp.stm, negateExp(exp.exp)())
-        // should already be caught by type checking!
-        is IRExp.Name -> IRError.NonNegatableExpression(exp).left().invoke<IRExp>()
+        is Name -> IRError.NonNegatableExpression(exp).left().invoke<IRExp>()
     }
 }
 
