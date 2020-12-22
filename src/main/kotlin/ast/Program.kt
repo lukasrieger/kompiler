@@ -2,7 +2,7 @@ package ast
 
 
 class Program<T : StmtK, E : ExpK>(
-    //val mainClass: ClassDefinition<T, E>,
+    //val mainClass: ClassDef<T, E>,
     val classes: List<ClassDef<T, E>>
 )
 

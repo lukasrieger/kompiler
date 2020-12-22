@@ -1,33 +1,34 @@
-import arrow.core.Either
-import ast.UntypedProgram
+
 import canonize.IRCanonize
-import frontend.*
+import frontend.compose
 import frontend.ir.IRTranslator
 import frontend.typecheck.TypeChecker
+import parser.Parser
 import trace.IRTracer
+import java.io.File
 
-object ParsingStageProxy : Stage<String, UntypedProgram> {
-    override val identifier: StageIdentifier
-        get() = StageIdentifier(
-            name = "NOOP",
-            canonicalOrder = 0
-        )
-
-    override fun run(input: String, config: CompilerConfiguration): Either<CompilerError, UntypedProgram> {
-        TODO("Not yet implemented")
-    }
-
-}
 
 fun main() {
-    val chain = ParsingStageProxy compose
+
+    val testFile =
+        File("C:\\Users\\Lukas Rieger\\IdeaProjects\\kompiler\\MiniJava_Examples\\Small\\ArrayAccess.java")
+            .inputStream()
+    val chain = Parser compose
             TypeChecker compose
             IRTranslator compose
             IRCanonize compose
             IRTracer
 
-    println("Done.")
+
     println(chain.identifier)
+
+    val result = chain(testFile)
+
+    println("Done.")
+
+    println(result)
+
+
 }
 
 

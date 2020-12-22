@@ -19,8 +19,15 @@ data class Context(
         val THIS = NamedRef("this", "")
     }
 
+    fun resolve2(id: ExpF.Symbol<Exp>): TypeStateM<TypeError, SymbolRef<TExp>> =
+        scope[id.name]?.success() ?: types[id.name]?.name?.let { SymbolRef(it, Typed.Class(it.name)) }?.success()
+        ?: outer?.resolve2(id) ?: TypeError.UnknownReference(id.name)
+            .failed(SymbolRef(ref = ExpF.Symbol(id.name), type = Untyped))
+
+
     fun resolve(id: ExpF.Symbol<Exp>): Either<TypeError, SymbolRef<TExp>> =
-        scope[id.name]?.right() ?: outer?.resolve(id) ?: TypeError.UnknownReference(id.name).left()
+        scope[id.name]?.right() ?: types[id.name]?.name?.let { SymbolRef(it, Typed.Class(it.name)) }?.right()
+        ?: outer?.resolve(id) ?: TypeError.UnknownReference(id.name).left()
 
     fun resolveRef(typeRef: Typed.Class, method: ExpF.Symbol<Exp>): Either<TypeError, MethodDescriptor> =
         types[typeRef.name]?.let { classDef ->
@@ -50,3 +57,25 @@ fun Context.scoped(methodRef: MethodDef<Stmt, Exp>): Context = Context(
 )
 
 fun NamedRef.toTypedSymbol() = ExpF.Symbol<TExp>(this)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

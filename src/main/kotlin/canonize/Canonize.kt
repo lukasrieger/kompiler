@@ -12,7 +12,7 @@ import frontend.ir.ast.*
 data class CanonizeError(val err: Throwable) : CompilerError.Severe("Can't canonize program", "")
 
 object IRCanonize : Stage<IRProgram, IRProgram> {
-    override val identifier: StageIdentifier = StageIdentifier("IRCanonize", 4)
+    override val identifier: StageIdentifier = StageIdentifier("IRCanonize", 3)
 
     override fun run(input: IRProgram, config: CompilerConfiguration): Either<CompilerError, IRProgram> =
         try {

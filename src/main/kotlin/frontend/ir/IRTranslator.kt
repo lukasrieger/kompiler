@@ -38,7 +38,7 @@ object IRTranslator : Stage<TypedProgram, IRProgram> {
 
     override val identifier = StageIdentifier(
         name = "IRTranslator",
-        canonicalOrder = 3
+        canonicalOrder = 2
     )
 
 

@@ -39,3 +39,6 @@ sealed class ExpF<T : ExpK> {
 
 infix fun <T : ExpF<TExp>> T.typeOf(type: Type): Either.Right<TExp> =
     TExp(this, type).right() as Either.Right<TExp>
+
+
+infix fun <T : ExpF<TExp>> T.of(type: Type): TExp = TExp(this, type)

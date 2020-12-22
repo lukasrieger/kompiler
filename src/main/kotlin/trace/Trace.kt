@@ -13,7 +13,7 @@ data class Traced(val body: List<BasicBlock>, val virtualEnd: Label?) : List<Bas
 
 private data class PartialBlock(val label: Label, val statements: List<IRStmt> = listOf()) : List<IRStmt> by statements
 
-private fun PartialBlock.endsWithJump() = last().let { it is IRStmt.Jump || it is IRStmt.CJump }
+private fun PartialBlock.endsWithJump() = lastOrNull()?.let { it is IRStmt.Jump || it is IRStmt.CJump } ?: false
 
 object IRTracer : Stage<IRProgram, IRProgram> {
 
@@ -77,7 +77,7 @@ fun IRFunction.toBlockContainer(): BlockContainer =
 
 
 private fun PartialBlock.toBasicBlock(): BasicBlock =
-    BasicBlock(statements)
+    BasicBlock(listOf(IRStmt.IRLabel(label)) + statements)
 
 private fun PartialBlock.ensureJumpExists(lbl: IRStmt.IRLabel): PartialBlock =
     this.takeIf { endsWithJump() } ?: PartialBlock(label, statements + IRStmt.Jump(lbl.label))
@@ -101,14 +101,17 @@ fun BlockContainer.initialTraceState(): TraceState =
     )
 
 tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): TraceState = when {
-    state.traced.contains(current) -> state
+    state.traced.contains(current) -> {
+        println("there. $current")
+        state
+    }
     else -> {
         val nextState = TraceState(traced = state.traced + current, untraced = state.untraced - current.entry)
         when (val relay = current.relay) {
             is IRStmt.Jump -> {
                 when (val dst = relay.targets[0]) {
                     in state.untraced -> traceHelper(nextState, state.untraced.getValue(dst))
-                    else -> state
+                    else -> nextState
                 }
             }
             is IRStmt.CJump -> {
@@ -151,14 +154,18 @@ tailrec fun BlockContainer.traceHelper(state: TraceState, current: BasicBlock): 
 
 private operator fun IRStmt.CJump.not(): IRStmt.CJump = IRStmt.CJump(!rel, left, right, falseLabel, trueLabel)
 
-tailrec fun BlockContainer.traceRec(state: TraceState): List<BasicBlock> = when {
+tailrec fun BlockContainer.traceRec(state: TraceState, first: Boolean): List<BasicBlock> = when {
     state.untraced.isEmpty() -> state.traced
-    else -> traceRec(traceHelper(state, first()))
+    else -> traceRec(
+        traceHelper(state,
+            first()
+                .takeIf { first } ?: state.untraced.iterator().next().value
+        ), false)
 }
 
 
 fun BlockContainer.trace(): Traced = Traced(
-    body = traceRec(initialTraceState()),
+    body = traceRec(initialTraceState(), true),
     virtualEnd = end.takeIf { isVirtual }
 )
 

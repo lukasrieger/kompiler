@@ -5,7 +5,6 @@ import frontend.ir.ast.Label
 
 
 data class BasicBlock(val body: List<IRStmt>) {
-
     constructor(vararg body: IRStmt) : this(body.toList())
 
     val entry = (body.first() as? IRStmt.IRLabel)?.label

@@ -42,3 +42,7 @@ sealed class StmtF<T : StmtK, E : ExpK> {
 
 infix fun <T : StmtF<TStmt, TExp>> T.typeOf(type: Type): Either.Right<TStmt> =
     TStmt(this, type).right() as Either.Right<TStmt>
+
+
+infix fun <T : StmtF<TStmt, TExp>> T.of(type: Type): TStmt =
+    TStmt(this, type)
