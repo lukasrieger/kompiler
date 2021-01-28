@@ -42,8 +42,8 @@ fun PartialUntypedPrg.typed(): Either<Nel<TypeError>, TypedProgram> = evaltype<T
     TypedProgram(classes = typedClasses)
 }.let {
     when (it) {
-        is TypeStateM.Failed -> it.errors.left()
-        is TypeStateM.Success -> it.value.right()
+        is StateF.Err -> it.errors.left()
+        is StateF.Succ -> it.value.right()
     }
 }
 
@@ -53,7 +53,7 @@ private fun typedClassDefinition(
     untyped: ClassDef<Stmt, Exp>,
     globalContext: Context,
     classContext: Context
-): TypeStateM<TypeError, ClassDef<TStmt, TExp>> = evaltype {
+): StateF<TypeError, ClassDef<TStmt, TExp>> = evaltype {
 
     ClassDef(
         name = resolvedClass.ref,
@@ -105,9 +105,7 @@ private fun PartialUntypedPrg.buildGlobalContext(): Context =
     )
 
 
-private fun Context.typedTest(statement: Stmt): TypeStateM<TypeError, TStmt> = evaltype {
-
-
+private fun Context.typedTest(statement: Stmt): StateF<TypeError, TStmt> = evaltype {
     when (val stmt = statement.stmt) {
         is ArrayAssign -> {
             val resolved = resolve2(stmt.id)()
@@ -148,7 +146,7 @@ private fun Context.typedTest(statement: Stmt): TypeStateM<TypeError, TStmt> = e
     }
 }
 
-private fun Context.typedTest(expr: Exp): TypeStateM<TypeError, TExp> = evaltype {
+private fun Context.typedTest(expr: Exp): StateF<TypeError, TExp> = evaltype {
     when (val exp = expr.exp) {
         is Read -> Read<TExp>() of Typed.Int
         is This -> {
@@ -194,11 +192,11 @@ private fun Context.typedTest(expr: Exp): TypeStateM<TypeError, TExp> = evaltype
             val args = exp.arguments.map { typedTest(it)() }
 
             when (val obj = typedTest(exp.obj)().ensureType2<Typed.Class>()) {
-                is TypeStateM.Failed -> {
+                is StateF.Err -> {
                     val ref = obj()
                     Invoke(ref, Symbol(exp.method.name), args) of Typed.Error(obj.errors.head)
                 }
-                is TypeStateM.Success -> {
+                is StateF.Succ -> {
                     val (objRef, type) = obj()
                     val expT = Invoke(
                         obj = objRef of type as Typed.Class,

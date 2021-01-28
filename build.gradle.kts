@@ -50,7 +50,7 @@ buildscript {
 plugins {
     kotlin("jvm") version "1.4.20"
     kotlin("kapt") version "1.4.20"
-    id("org.jetbrains.dokka") version "1.4.20"
+    //id("org.jetbrains.dokka") version "1.4.20"
     id("application")
     `maven-publish`
 }
@@ -132,13 +132,13 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-core:2.13.3")
     implementation("$groupProperty:antlr-kotlin-runtime-jvm:$antlrKotlinVersion")
 
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.2")
+
 
     implementation("io.arrow-kt:arrow-fx:${Versions.arrowVersion}")
     implementation("io.arrow-kt:arrow-fx-coroutines:${Versions.arrowVersion}")
     implementation("io.arrow-kt:arrow-syntax:${Versions.arrowVersion}")
     implementation("io.arrow-kt:arrow-optics:${Versions.arrowVersion}")
-    implementation("io.arrow-kt:arrow-mtl:${Versions.arrowVersion}")
-    implementation("io.arrow-kt:arrow-mtl-data:${Versions.arrowVersion}")
     kapt("io.arrow-kt:arrow-meta:${Versions.arrowVersion}")
 }
 

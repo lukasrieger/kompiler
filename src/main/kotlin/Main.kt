@@ -1,32 +1,43 @@
 
-import canonize.IRCanonize
-import frontend.compose
-import frontend.ir.IRTranslator
-import frontend.typecheck.TypeChecker
-import parser.Parser
-import trace.IRTracer
-import java.io.File
+import arrow.core.toT
+import kotlinx.coroutines.runBlocking
+import util.StateS
+import util.state
 
+fun appendHello() = StateS<String, Int> { st -> (st + "Hello") toT 0 }
 
-fun main() {
+fun appendWorld() = StateS<String, Int> { st -> (st + "World") toT 0 }
 
-    val testFile =
-        File("C:\\Users\\Lukas Rieger\\IdeaProjects\\kompiler\\MiniJava_Examples\\Small\\ArrayAccess.java")
-            .inputStream()
-    val chain = Parser compose
-            TypeChecker compose
-            IRTranslator compose
-            IRCanonize compose
-            IRTracer
+fun main() = runBlocking {
 
+//    val testFile =
+//        File("C:\\Users\\Lukas Rieger\\IdeaProjects\\kompiler\\MiniJava_Examples\\Small\\ArrayAccess.java")
+//            .inputStream()
+//    val chain = Parser compose
+//            TypeChecker compose
+//            IRTranslator compose
+//            IRCanonize compose
+//            IRTracer
+//
+//
+//    println(chain.identifier)
+//
+//    val result = chain(testFile)
+//
+//    println("Done.")
+//
+//    println(result)
 
-    println(chain.identifier)
+    val x = state<String, Unit> {
+        println("Soos")
+        appendHello()()
+        println("Saas")
+        //appendWorld()()
+        print("Sees")
 
-    val result = chain(testFile)
+    }
 
-    println("Done.")
-
-    println(result)
+    println(x("Result is: ").a)
 
 
 }

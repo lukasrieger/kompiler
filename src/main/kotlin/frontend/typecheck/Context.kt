@@ -19,10 +19,10 @@ data class Context(
         val THIS = NamedRef("this", "")
     }
 
-    fun resolve2(id: ExpF.Symbol<Exp>): TypeStateM<TypeError, SymbolRef<TExp>> =
+    fun resolve2(id: ExpF.Symbol<Exp>): StateF<TypeError, SymbolRef<TExp>> =
         scope[id.name]?.success() ?: types[id.name]?.name?.let { SymbolRef(it, Typed.Class(it.name)) }?.success()
-        ?: outer?.resolve2(id) ?: TypeError.UnknownReference(id.name)
-            .failed(SymbolRef(ref = ExpF.Symbol(id.name), type = Untyped))
+        ?: outer?.resolve2(id) ?:
+        TypeError.UnknownReference(id.name) toT SymbolRef(ref = ExpF.Symbol(id.name), type = Untyped)
 
 
     fun resolve(id: ExpF.Symbol<Exp>): Either<TypeError, SymbolRef<TExp>> =
